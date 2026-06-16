@@ -1,0 +1,21 @@
+# Smithery local stdio server config for the SettleMesh MCP server.
+# Distributed via npm (`npx -y settlemesh mcp`). No Docker/hosted runtime.
+# NOTE: validate against the current Smithery schema (https://smithery.ai/docs) before submitting —
+# Smithery's config format evolves. Smithery also auto-ingests servers from the official MCP
+# registry, so this file is a faster explicit path, not the only one.
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      settleApiKey:
+        type: string
+        title: SETTLE_API_KEY
+        description: "Your SettleMesh API key (sk-settle-...). Optional if you have run `settlemesh login` and a CLI session is stored."
+    required: []
+  commandFunction: |-
+    (config) => ({
+      command: 'npx',
+      args: ['-y', 'settlemesh', 'mcp'],
+      env: config.settleApiKey ? { SETTLE_API_KEY: config.settleApiKey } : {}
+    })

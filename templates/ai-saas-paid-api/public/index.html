@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pay-per-use AI · powered by SettleMesh</title>
+<link rel="stylesheet" href="/style.css" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%237c5cff'/%3E%3Cpath d='M20 40l8-16 8 12 4-6 4 10' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div>
+      <div class="brand-name">Pay-per-use AI</div>
+      <div class="brand-sub">each AI call is billed to your Aev wallet</div>
+    </div>
+  </div>
+  <span id="authChip" class="chip chip-muted">checking…</span>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>Ask the AI. <span class="grad">You</span> pay per call.</h1>
+    <p class="lede">
+      Type a prompt and run it. Each AI call is charged straight to <b>your</b> SettleMesh Aev wallet —
+      not the developer's. No subscription, no billing code. One deploy, real per-use billing.
+    </p>
+    <div id="loginBanner" class="login-banner" hidden>
+      <span>Sign in with your SettleMesh account to run — calls are charged to your wallet.</span>
+      <a class="btn btn-primary" href="/__settle/login">Sign in with SettleMesh</a>
+    </div>
+  </section>
+
+  <section class="panel">
+    <label class="field-label" for="prompt">Your prompt</label>
+    <textarea id="prompt" class="prompt" rows="4" maxlength="2000"
+              placeholder="e.g. Write a punchy two-line tagline for a solar-powered backpack."></textarea>
+
+    <div class="run-row">
+      <button id="runBtn" class="btn btn-primary btn-lg" disabled>
+        <span class="btn-label">Run AI call</span>
+        <span class="btn-price">≈ <b id="estVal">2</b> Aev</span>
+      </button>
+      <p class="pay-note">You pay per use · charged to your Aev wallet on success only.</p>
+    </div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+  </section>
+
+  <section id="resultPanel" class="panel result-panel" hidden>
+    <div class="result-head">
+      <span class="result-label">Result</span>
+      <span id="costTag" class="cost-tag"></span>
+    </div>
+    <pre id="result" class="result"></pre>
+  </section>
+</main>
+
+<!--
+  Optional badge — delete this <footer> block (and nothing else) to remove the
+  "Powered by SettleMesh" attribution. It is plain user-space HTML; removing it has no effect on
+  billing, auth, or deploys.
+-->
+<footer class="powered-by">
+  <a href="https://settlemesh.io/?utm_source=template&amp;utm_medium=badge"
+     target="_blank" rel="noopener noreferrer">Powered by SettleMesh</a>
+</footer>
+<!-- /Optional badge -->
+
+<script src="/app.js"></script>
+</body>
+</html>

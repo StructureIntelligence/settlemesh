@@ -1,0 +1,12 @@
+{
+  "name": "auth-payments-minimal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "The smallest possible paid app on SettleMesh: login + one paid action billed to the logged-in user's Aev wallet.",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

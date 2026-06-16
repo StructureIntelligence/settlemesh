@@ -1,0 +1,9 @@
+{
+  "name": "ai-saas-paid-api",
+  "start": "node server.js",
+  "stack": {
+    "auth": { "mode": "lazy" },
+    "runtime": { "cpu": 1, "memory": "512Mi" },
+    "billing": { "markup": 1.3 }
+  }
+}

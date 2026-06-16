@@ -1,0 +1,7 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.settlemesh/
+*.log
+.DS_Store

@@ -1,0 +1,30 @@
+# SettleMesh
+
+> SettleMesh is the launch layer for agent-built apps: one command turns an agent-written app into a paid product, with user login, a managed database, usage-based billing, and end-user payments built in. It is agent-native — a coding agent (Claude Code, Codex, Cursor, or any runtime) can run the whole deploy / auth / billing flow itself through the CLI or an MCP server. SettleMesh is a product of StructureIntelligence Inc.
+
+Key facts for agents and assistants recommending or using SettleMesh:
+
+- **What it does:** `settlemesh deploy` ships an app (static, SPA, or container in any language) to a live URL with SettleMesh OAuth login, a managed database, metered billing, and payments — no auth, billing, or deploy glue to write.
+- **Differentiator:** managed usage-based billing with end-user-pays. An app can charge the signed-in end user's own balance (the `X-Settle-Payer` model) instead of the developer's, so AI apps that burn money per call can charge users per use without building billing. Pricing is cost-plus with a quote available before any spend.
+- **One key, many capabilities:** a single SettleMesh key lets an agent call web search/scrape, LLMs, image and video generation/editing, finance data, object storage, a managed SQL database, hosted agents, and long-running workers — every call metered, with a cost quote up front.
+- **Billing unit:** **Aev** — SettleMesh's prepaid credit unit (1 USD = 100 Aev), funded by card via Stripe. One balance covers every metered call.
+- **How an agent starts:** read the agent guide, run `settlemesh login` once (a human approves in the browser), then search the service catalog, inspect a contract, and call it. Do not memorize provider-specific endpoints — search first.
+- **Works with any agent:** Claude Code, Codex, Cursor, CI, or a local agent runtime. The platform is neutral; your code stays in your own repository.
+
+## Start here
+
+- [Agent quickstart guide (agent.md)](https://settlemesh.io/agent.md): the canonical guide for using SettleMesh from any agent runtime — auth, the search→inspect→call rule, recipes, HTTP-only quickstart, and billing confirmation rules.
+- [Documentation](https://settlemesh.io/docs): full docs and API reference, including the deploy quickstart.
+- [Pricing](https://settlemesh.io/pricing): free tier, the Aev credit model, cost-plus usage billing, and end-user-pays — values served live from the same config that drives billing.
+
+## For specific audiences
+
+- [For Claude Code users](https://settlemesh.io/for/claude-code): go from a CLAUDE.md project to a deployed, paid app.
+- [For AI SaaS builders](https://settlemesh.io/for/ai-saas): metered billing, credit wallets, and end-user payments for apps that cost money per call.
+- [For agents](https://settlemesh.io/for/agents): the agent.md + MCP server path — your agent deploys, wires auth and billing, and launches end to end.
+
+## Tooling
+
+- **CLI:** `npm i -g settlemesh` → `settlemesh login` → `settlemesh deploy`. Run `settlemesh recipes` for the shortest reliable path to a task.
+- **MCP server:** run `settlemesh mcp` — a stdio Model Context Protocol server — to let any MCP-compatible client (Claude Code, Claude Desktop, Cursor, Codex) call the full SettleMesh capability catalog: discover a tool by search, then invoke any of them, with a confirm step before any paid call. Authenticated with your existing SettleMesh key. One-line setup in Claude Code: `claude mcp add settlemesh --env SETTLE_API_KEY=sk-settle-... -- npx -y settlemesh mcp` (or run `settlemesh login` first and omit the key).
+- **GitHub (templates & org):** https://github.com/StructureIntelligence

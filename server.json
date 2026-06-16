@@ -1,0 +1,37 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.settlemesh/cli",
+  "description": "Deploy and monetize agent-built apps. One key lets an agent search the tool catalog and invoke any capability (web search/scrape, LLMs, image/video generation, managed SQL database, hosted agents), with usage-based billing and end-user-pays (X-Settle-Payer) so AI apps can charge users per call without building billing.",
+  "repository": {
+    "url": "https://github.com/StructureIntelligence/settlemesh",
+    "source": "github"
+  },
+  "version": "0.1.71",
+  "websiteUrl": "https://settlemesh.io",
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "settlemesh",
+      "version": "0.1.71",
+      "transport": {
+        "type": "stdio"
+      },
+      "runtimeArguments": [
+        {
+          "type": "positional",
+          "value": "mcp",
+          "valueHint": "mcp"
+        }
+      ],
+      "environmentVariables": [
+        {
+          "name": "SETTLE_API_KEY",
+          "description": "SettleMesh API key (sk-settle-...). Optional if you have run `settlemesh login` and a CLI session is stored. Never written to the protocol stream or logs.",
+          "isSecret": true,
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

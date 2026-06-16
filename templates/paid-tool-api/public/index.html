@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>paid-tool-api — a metered API on SettleMesh</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.6 system-ui, sans-serif; max-width: 720px; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { margin-bottom: .25rem; }
+  .sub { opacity: .7; margin-top: 0; }
+  pre { background: rgba(127,127,127,.12); padding: 1rem; border-radius: 8px; overflow-x: auto; }
+  code { font-family: ui-monospace, monospace; }
+  .pill { display: inline-block; font-size: .8rem; padding: .15rem .55rem; border-radius: 999px; background: rgba(127,127,127,.18); }
+  button { font: inherit; padding: .5rem .9rem; border-radius: 8px; border: 1px solid rgba(127,127,127,.4); background: transparent; cursor: pointer; }
+  textarea { width: 100%; box-sizing: border-box; font: inherit; padding: .6rem; border-radius: 8px; border: 1px solid rgba(127,127,127,.4); }
+  #out { white-space: pre-wrap; min-height: 2rem; }
+  footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid rgba(127,127,127,.2); }
+</style>
+</head>
+<body>
+  <h1>paid-tool-api <span class="pill">metered</span></h1>
+  <p class="sub">One endpoint that summarizes text — and bills the caller's SettleMesh wallet per call.</p>
+
+  <h2>Try it</h2>
+  <p id="auth"></p>
+  <textarea id="text" rows="5" placeholder="Paste some text to summarize…"></textarea>
+  <p><button id="go">Summarize (paid)</button></p>
+  <pre id="out"></pre>
+
+  <h2>Call it yourself</h2>
+  <p>Sign in once at <code>/__settle/login</code>, then POST to the endpoint. The session cookie is your
+     payer; the call is billed to your SettleMesh wallet in Aev (1 USD = 100 Aev).</p>
+  <pre><code>curl -X POST https://YOUR-APP.run.settlemesh.io/api/tool \
+  -H "Authorization: Bearer &lt;your-settlemesh-session-token&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"Long article here...","style":"bullets"}'</code></pre>
+
+  <script>
+    fetch("/api/me").then(r => r.json()).then(m => {
+      document.getElementById("auth").innerHTML = m.logged_in
+        ? "✅ You're signed in — calls will be billed to your wallet."
+        : '🔒 <a href="/__settle/login">Sign in with SettleMesh</a> to make a paid call.';
+    }).catch(() => {});
+
+    document.getElementById("go").addEventListener("click", async () => {
+      const out = document.getElementById("out");
+      out.textContent = "Working…";
+      try {
+        const res = await fetch("/api/tool", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: document.getElementById("text").value, style: "tldr" }),
+        });
+        const data = await res.json();
+        if (data.summary) {
+          out.textContent = data.summary + (data.cost_aev != null ? `\n\n— billed ${data.cost_aev} Aev` : "");
+        } else if (data.login) {
+          out.innerHTML = '🔒 <a href="' + data.login + '">Sign in with SettleMesh</a> first.';
+        } else {
+          out.textContent = "Error: " + (data.message || data.error || res.status);
+        }
+      } catch (e) {
+        out.textContent = "Error: " + e.message;
+      }
+    });
+  </script>
+
+  <!--
+    Optional badge — delete this <footer> block to remove it.
+    "Powered by SettleMesh" credit linking back to settlemesh.io.
+  -->
+  <footer>
+    <a href="https://settlemesh.io/?utm_source=template&utm_medium=badge"
+       target="_blank" rel="noopener noreferrer"
+       style="font-size:.85rem; opacity:.55; text-decoration:none;">
+      ⚡ Powered by SettleMesh
+    </a>
+  </footer>
+</body>
+</html>
