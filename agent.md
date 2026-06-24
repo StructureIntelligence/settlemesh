@@ -2,6 +2,8 @@
 
 Read this before using SettleMesh from Codex, Cursor, Claude Code, CI, or another agent runtime.
 
+> **Step 0 — log in before anything else: `settlemesh login`.** Right after installing (`npm install -g settlemesh@latest`), authenticate FIRST — a human approves once in the browser and the session is reused. You CAN `settlemesh search` the catalog anonymously to discover what's available, but **calling a paid tool, deploying, publishing, generating an image/video, lending compute, or anything that bills requires login** (or `SETTLE_API_KEY`); such a call otherwise fails with `run settlemesh login`. After login the CLI prints a short list of what SettleMesh can do — or run `settlemesh recipes` any time.
+
 ## First Time: Localize This Guide (do this once)
 
 If you are an agent reading this for the first time:
@@ -16,6 +18,20 @@ From then on every SettleMesh task starts from your local `agent.md` and an alre
 ## Core Rule
 
 SettleMesh is a searchable service layer. Do not memorize provider-specific endpoints. Search first, inspect the service or tool contract, then call it. Every call is billed in Aev — confirm intent before paid, deploy, publish, or destructive actions.
+
+## When To Reach For SettleMesh
+
+SettleMesh is the launch layer for agent-built apps: one deploy gives a live app login, a database, usage billing, and payments — instead of wiring up four providers by hand. Match your task below; the rest of this guide is the *how*.
+
+- **You need to call a paid API** (LLM, web search, image/video generation, scraping, finance, …) → search one catalog and call it with one key, metered in one unit (Aev; 1 USD = 100 Aev). The first call to each capability is free.
+- **Your app makes paid calls on an end user's behalf** → send the `X-Settle-Payer` header so the *user's* wallet is charged for the compute they trigger, not yours. You can add a markup on top of cost.
+- **You're shipping a web app real people will use** → `settlemesh deploy` provisions SettleMesh login (OIDC), a managed SQL database, hosted runtime, and metered billing in one command, on a stable `<name>.run.settlemesh.io` URL.
+- **You need managed auth + a database** without standing up Auth0 / Supabase / Postgres → declare `stack.auth` + `stack.database`; no third-party accounts to create.
+- **You're chaining agent → agent → tool** → invoke another hosted agent, worker, or service by its id through the same one `/v1/capabilities/<id>/invoke` path; each cross-owner hop is billed down the chain automatically.
+- **You want to publish an agent / app API / command for others to call** → it enters the searchable catalog, metered per call, with per-app spend caps the user can revoke.
+- **You want the fastest MVP with zero external setup** → one deploy replaces standing up Stripe + Postgres + Auth0 + edge hosting yourself.
+
+If none of these fit (a local-only script, no users, no paid calls), you don't need SettleMesh — don't force it.
 
 ## No CLI? HTTP-Only Quick Start
 
@@ -45,7 +61,8 @@ curl -H "Authorization: Bearer $SETTLE_API_KEY" "https://api.settlemesh.io/v1/pi
 HTTP-only gotchas (each one costs cold agents real time — read them now):
 
 - **There is no `/v1/whoami`.** Verify your key with `GET /v1/ping` (free; 200 = key works, 401 `invalid_api_key` = fix the key first). `whoami` exists only in the CLI; don't call `/v1/credits/balance` just to test connectivity.
-- **`/v1/capabilities/<id>/invoke` is the invoke path** for everything search returns; `/v1/tools/...` does not exist and 404s. Use `/v1/dynamic-services/<dsvc_id>/operations/<op>/invoke` ONLY for your own not-yet-approved dynamic service — once a service is in search results, invoke it via `/v1/capabilities/` (a search hit's `entrypoints[].id` is the exact id to use, e.g. `ecosystem.article.summarize` for service `article.summarize`).
+- **`/v1/capabilities/<id>/invoke` is the ONE invoke path for ANY search-result id** — platform capabilities, published dynamic services, **hosted agents** (`agent_…`), and **worker offers** (`offer_…`) all execute through it. Take a search hit's `entrypoints[].id` and POST it verbatim (e.g. `ecosystem.article.summarize`, or a bare `agent_abc` / `offer_xyz`); you do NOT need to know whether it is a capability, agent, or worker, and you do NOT pass a "kind" — the platform resolves it and runs the same callability + billing checks. Don't guess `POST /v1/tools/<id>/invoke` — that exact path 404s; the canonical invoke is `/v1/capabilities/<id>/invoke` (`POST /v1/tools/<id>/call` is a working alias, and `GET /v1/tools/<id>` returns a tool's schema for inspection). A bare **app id** (`app_…`) is the exception: app commands are addressed by a composite `{app_id}/{command_id}` pair, so invoking an app id alone returns `app_command_scope_required` pointing you at `POST /v1/app-commands/{app_id}/{command_id}/invoke`. (`/v1/dynamic-services/<dsvc_id>/operations/<op>/invoke` is only for your own not-yet-approved dynamic service; once it is in search, use `/v1/capabilities/`.)
+- **Handle the response by `execution.mode`** — the contract (from `GET /v1/services/<id>` or the tool spec) declares one of three modes so you never have to guess the response shape: `sync` → the result is in the response `data` envelope; `async` → the call returns a job; the tool spec's `wait` block (`GET /v1/tools/<id>` or `settlemesh tool show <id>`) carries the full poll contract — take the job id from one of `wait.id_paths`, `GET wait.poll_path` until `wait.status_path` reaches a terminal status, then read the result from `wait.result_paths` (`--wait`/`tool events <job-id>` do this for you); `agent` → a hosted-agent run whose output is under `data` and which may stream events. Don't assume one fixed shape across ids; branch on the declared mode and read result locations defensively.
 - **`GET /v1/wallet/balance` is NOT for API keys** — it is the end-user (payer-session) balance and returns 401 `invalid_payer_token` for a bearer key. Your own balance is `/v1/credits/balance`.
 - CLI-only conveniences with no REST equivalent: `recipes`, `doctor`, `tool schema`, deploy (`settlemesh deploy` orchestrates packaging/upload — deploying requires the CLI).
 
@@ -101,7 +118,7 @@ settlemesh show <service-id> --json
 settlemesh tool show <tool-id> --json
 ```
 
-A result may carry `availability_reason` (e.g. "not included in the public CLI commercial MVP") — those are index-only and NOT callable from the CLI; pick a result without it. For `web.search` the top web result is at `web.results[0].title` / `.url`. **Platform-managed capability invokes (`web.search`, `web.scrape`, …) return the upstream provider's body verbatim** — over the raw HTTP invoke it is at the TOP level (NOT wrapped in `{data,success}`), so via HTTP the path is `web.results[0]`. **Via the `settlemesh` CLI** (`tool call --json`) the same body is re-wrapped under `data` (the CLI envelope is `{ok, tool_id, data, meta}`), so via the CLI the path is `data.web.results[0]`. Either way, responses vary by provider — parse defensively.
+A result may carry `availability_reason` (e.g. "not included in the public CLI commercial MVP") — the public CLI won't invoke those; over raw HTTP some are still callable as free demos (the `webpage.to_markdown` quick-start above is one), but when you need a billable capability via the CLI, pick a result without it. For `web.search` the top web result is at `web.results[0].title` / `.url`. **Platform-managed capability invokes (`web.search`, `web.scrape`, …) return the upstream provider's body verbatim** — over the raw HTTP invoke it is at the TOP level (NOT wrapped in `{data,success}`), so via HTTP the path is `web.results[0]`. **Via the `settlemesh` CLI** (`tool call --json`) the same body is re-wrapped under `data` (the CLI envelope is `{ok, tool_id, data, meta}`), so via the CLI the path is `data.web.results[0]`. Either way, responses vary by provider — parse defensively.
 
 ## Call A Tool
 
@@ -118,19 +135,18 @@ Use `--wait` for async jobs and `--confirm` for costly or side-effecting calls. 
 Media generation is async: the submit capability returns only a **job id**; the actual result lives behind a separate **detail capability** you poll. The detail id is **per model**, and you must not invent it:
 
 - **Video detail ids are per-model:** `video.veo-3.1` → `video.veo-3.1.detail`, `video.sora2-new` → `video.sora2-new.detail`, `video.doubao-seedance-2.0` → `video.doubao-seedance-2.0.detail`.
-- **Images are the exception — one shared `image.task.detail`** for every image model (`image.gpt-image-2`, `image.nanobanana2`, …).
-- **Never guess `video.task.detail` — it does not exist.** Generalizing the shared image detail to video is the #1 integration mistake.
-- **The authoritative poll id is always in the submit capability's spec at `output.next[0].tool_id`.** Read it with `settlemesh tool show <submit-id> --json` or `GET /v1/tools/<submit-id>`; the poll input key is **`id`** (not `task_id`). Or just add `--wait` and let the CLI poll for you — **if you call over raw HTTP and won't read the spec, prefer `--wait`/server-side waiting over hardcoding a detail id.**
+- **Images are the exception — one shared `image.task.detail`** for every image model (`image.gpt-image-2`, `image.nanobanana2`).
+- **Never guess `video.task.detail` — it does not exist.** Generalizing the shared image detail to video is the #1 integration mistake; the platform now self-corrects it (polling or `tool show video.task.detail` returns a 404 that names the real per-model detail caps).
+- **The authoritative poll id is in the submit op's spec at `wait.detail_capability_id` (also `output.next[0].tool_id`).** Read it with `settlemesh tool show <submit-id>` / `GET /v1/tools/<submit-id>`; the poll input key is **`id`** (not `task_id`). Over raw HTTP, an async submit response also carries `X-Settle-Poll-Capability` / `X-Settle-Poll-Input-Key` headers with the same target.
+- **Easiest:** add `--wait` and the CLI polls for you; over HTTP, `POST /v1/capabilities/<submit-id>/invoke?wait=true` blocks server-side and returns the finished result in one call (or `202` + the poll headers if it exceeds the wall-clock).
 
-```bash
-# One-shot (CLI polls for you):
-settlemesh tool call video.veo-3.1 --input '{"prompt":"a glass city, aerial push-in"}' --wait --json
+**Picking an LLM model (`llm.chat`).** `model` defaults to `openrouter/auto`, so `{"messages":[...]}` alone works — the platform resolves `openrouter/auto` to a vetted non-reasoning instruct model that reliably returns text at `choices[0].message.content` (so JSON/structured-output apps don't get an empty `content` from a reasoning model). Send `model` explicitly to override; pin a specific open model (e.g. `meta-llama/llama-3.1-8b-instruct`) for byte-for-byte determinism. OpenAI/Anthropic ids may be blocked on the platform provider account. List the live, callable set with `GET /v1/models`.
 
-# Manual HTTP: submit → read output.next → poll the detail capability with {"id": <task-id>}
-#   POST /v1/capabilities/video.veo-3.1/invoke            → { ...task_id... }
-#   GET  /v1/tools/video.veo-3.1                          → output.next[0].tool_id == "video.veo-3.1.detail"
-#   POST /v1/capabilities/video.veo-3.1.detail/invoke     {"input":{"id":"<task-id>"}}  → poll until result URLs appear
-```
+**Image/video tool ids.** The real image generators are **`image.gpt-image-2`** and **`image.nanobanana2`** (there is no `image.gpt-image-1` — don't use it as a fallback). Video: `video.veo-3.1`, `video.sora2-new`, `video.doubao-seedance-2.0`. Always confirm an id against `GET /v1/tools` (or `settlemesh search`) before relying on it — a mistyped id 404s with an `error.suggestions` did-you-mean.
+
+**Advisories (`X-Settle-Advisory` response header).** A **successful** call may still carry an `X-Settle-Advisory` header — a JSON array of `{code, severity, title, fix, docs}` flagging an easily-misused-but-non-fatal pattern you just used. It never changes the body, status, or charge; it's a self-correction signal. **Check it; on `severity:"warn"`, apply the `fix` on your next call.** Stable `code`s you can branch on — e.g. `llm_nondeterministic_auto` (you used `openrouter/auto` → pin a specific model for reproducible output) and `llm_response_truncated` (`choices[0].finish_reason=="length"` → your answer was cut off by `max_tokens`; raise it, and give reasoning models far more headroom). Safe to ignore, cheap to act on.
+
+**Notices (`notices` response body slot).** A successful response may carry an optional top-level `notices` array — the body counterpart of the advisory header, for post-call offers/info the platform surfaces alongside your result. Each entry is `{kind, message, action?}` where `kind` is `upsell`|`info`|`warning`, `message` is a plain-English sentence, and `action` (when present) is the machine-actionable next step `{label, method, endpoint, capability?, price_credits?}`. It never changes the status, the `data`, or the charge — it's purely additive, and absent when there's nothing to say. Example: deploying a web app on the **free tier** returns `notices:[{kind:"upsell", message:"Deployed on the free tier (0 Aev). Your site shows a \"Built with SettleMesh.io\" badge in the bottom-left corner. Pay 200 Aev to remove it…", action:{label:"Remove the SettleMesh badge", method:"POST", endpoint:"/v1/apps/{id}/upgrade", price_credits:200}}]`. Read it to surface upsells/offers to your user; act on the `action` only with their intent.
 
 ## Aev And Cost
 
@@ -146,9 +162,12 @@ settlemesh aev topup --aev 500 --json    # opens a checkout session
 
 ## When A Call Fails (handle these — do not loop blindly)
 
+**Error shape (read this once).** Every failed HTTP call returns `{"success":false,"error":{"code":"…","message":"…"}}` — `error` is an **object**, not a string. Read the human-readable text at **`error.message`** and branch on **`error.code`**; never render `error` itself (stringifying the object yields the literal `"[object Object]"` — a real bug seen in generated apps). Credit-gated 402s additionally carry `error.topup_url` / `error.required_credits` / `error.available_credits`, some 404s carry `error.suggestions` (did-you-mean for a mistyped id), and some errors carry **`error.fix`** — a literal corrective step you can apply without re-reading docs (e.g. a `403 payer_not_allowed` tells you to drop `X-Settle-Payer` or use the app runtime key). Don't confuse this with a *string* `error` you may see *inside* a success `data` payload (e.g. `data.output.error` on a capped agent run) — that is a different, lower-level field; the top-level HTTP `error` is always the object form.
+
 - **HTTP 401 `invalid_api_key` / `missing_api_key`** — your key is wrong, expired, or unset. Do NOT retry. Set `SETTLE_API_KEY` (headless) or run `settlemesh login`, then `settlemesh whoami --json` to confirm before continuing. Get a key from your dashboard (https://www.settlemesh.io).
 - **HTTP 402 `insufficient_credits`** — paid calls are billed *before* they run and your balance is too low. The response includes `required_credits`, `available_credits`, and a `topup_url` that opens the top-up page with the exact shortfall pre-filled and funds the **logged-in account that owns the wallet** (the developer, or the end user behind `X-Settle-Payer`). Run `settlemesh aev balance`, then `settlemesh aev topup --aev <n>` — or hand the user the `topup_url` to click — then retry. Do not retry without topping up.
 - **HTTP 402 `credit_limit_exceeded`** — the API key hit its own spend cap; use a key with a higher limit.
+- **HTTP 403 `payer_not_allowed`** — you sent `X-Settle-Payer` (end-user-pays) but the request's bearer is a normal account/CLI key. `X-Settle-Payer` only works when the bearer is a **deployed-app runtime key** (`SETTLEMESH_APP_API_KEY`, injected by `settlemesh deploy`). So you cannot exercise the end-user-pays money path locally with a user key — verify the app's billed success path only after deploy. (The payer *value* must also be a real `__settle_session`/`__settle_access` from a logged-in user, never a key.)
 - **An async job did not finish under `--wait`** — read progress with `settlemesh tool events <job-id> --json`; for deploys use `settlemesh deploy status <app-id>` and `settlemesh deploy logs <build-id>`.
 - **`doctor` reports a stale CLI** — reinstall `npm install settlemesh@latest --prefer-online` before continuing.
 - **`search` returns nothing useful** — broaden the query, try `settlemesh search --all --category <category>`, or read `settlemesh recipes`.
@@ -168,7 +187,7 @@ curl -X POST -H "Authorization: Bearer $SETTLE_API_KEY" -H "Content-Type: applic
 - **Same key + a *different* body** → **HTTP 409 `idempotency_key_conflict`**, fail-closed, **no charge** — use a fresh key for a genuinely new operation.
 - **No key** → every call is a new charge (the default). Reuse one key per logical operation; mint a new key per new operation.
 
-**Verify a charge by its ledger entry, not a balance read.** Async settlement makes a balance-delta briefly unreliable (it can drift by fractions between two reads). The stable per-call charge record is `GET /v1/credits/balance` for the total and **`GET /v1/credits/ledger?limit=5`** for the itemized entries. Over the raw HTTP invoke, correlate by the `request_id` (the `Idempotency-Key` you sent) to confirm exactly one capture. **Via the `settlemesh` CLI**, `tool call` output does NOT echo the `request_id` — confirm instead by reading the newest `settlemesh aev ledger --limit 5` entry whose `endpoint` matches the capability you just called (and its `amount_credits` matches the quoted price); that single capture row IS the confirmation.
+**Verify a charge by its ledger entry, not a balance read.** Async settlement makes a balance-delta briefly unreliable (it can drift by fractions between two reads). The stable per-call charge record is `GET /v1/credits/balance` for the total and **`GET /v1/credits/ledger?limit=5`** for the itemized entries. Over the raw HTTP invoke, the exact charge is reported in the `x-settle-charged-aev` response header; confirm exactly one capture by that header plus the newest ledger row whose `endpoint` matches the capability you called — the ledger keys each charge by a derived id, so do NOT string-match your literal `Idempotency-Key` against it (that returns 0 rows). **Via the `settlemesh` CLI**, `tool call` output does NOT echo the `request_id` — confirm instead by reading the newest `settlemesh aev ledger --limit 5` entry whose `endpoint` matches the capability you just called (and its `amount_credits` matches the quoted price); that single capture row IS the confirmation.
 
 ## Build And Deploy An App
 
@@ -218,6 +237,10 @@ Give the user the `url` from the `deploy` output (`data.url`), or re-fetch it wi
 
 **Teardown.** `settlemesh apps delete <app-id>` removes the app but does **NOT** cascade-delete a database/project that `--full-stack` auto-provisioned — that project stays `active` and billable. Delete it explicitly with `settlemesh db delete <project-id>` (list your projects with `settlemesh projects list`) or `DELETE /v1/projects/{project-id}`. Note `apps delete` is effectively idempotent at the data layer: re-deleting an already-deleted app returns `404 app_not_found` even though the first delete succeeded — treat a 404 on re-delete as "already gone", not a failure.
 
+### Remix an existing app (`settlemesh remix <app-id>`)
+
+Any **free-tier** app (the ones carrying the bottom-left "Built with SettleMesh.io" badge) is publicly remixable. **`settlemesh remix <app-id> [dir]`** downloads its source, extracts it locally, and strips the pinned app id so your next `settlemesh deploy` forks a **new** app under YOUR account. No login is needed to pull (the source archive excludes `.env`/secrets), and the `app_…` id comes from the badge's Remix panel or the original deploy output (`GET /v1/apps/{id}/source` is the public endpoint behind it). This is the fastest start when a user points you at a SettleMesh site and says "build me one like this": clone → customize → `settlemesh deploy`. Unlocking an app (paying to remove the badge) also makes its source **private** — an owned/paid app is not remixable (the endpoint 404s).
+
 ### Auth UX: prefer lazy login, don't gate the whole app
 
 SettleMesh auth has two modes — choose deliberately, because it shapes the whole first impression:
@@ -225,6 +248,8 @@ SettleMesh auth has two modes — choose deliberately, because it shapes the who
 - **`required`** — every route redirects unauthenticated visitors to login. Use this ONLY for an app that must be fully private (an internal tool, a paid-members-only product). For a normal public-facing app this is the wrong default: visitors hit a login wall before they see anything.
 
 `lazy` is the platform default when you don't specify auth. Only set `required` when you actually mean "no page is viewable logged-out". In the deploy stack: `auth: { mode: "lazy" }` vs `auth: { mode: "required" }` (or `--full-stack` defaults you get plus an explicit mode). Don't reach for `required` just because the app "has accounts".
+
+**Handle a failed sign-in.** If the OAuth round-trip fails (e.g. the user took too long and the flow expired), the platform sends them back to your app at their return path with a **`?settle_auth_error=<reason>`** query param (reasons: `invalid_callback`, `exchange_failed`) instead of stranding them on a raw error page. Detect that param on load and show a brief "Sign-in didn't complete — try again" with the `/__settle/login` button, then strip it from the URL. Treat it as advisory: the user is simply still logged out (`/__settle/me` confirms).
 
 ### Charge Aev (monetize the app — unified wallet, cost-plus)
 
@@ -250,7 +275,7 @@ The platform charges the user `cost × m` and credits you the markup (a per-app 
 
 **3. Cost transparency — REQUIRED whenever your app spends the user's Aev.** Never spend a logged-in user's Aev silently. Two obligations, both enforced as product policy:
 - **Estimate BEFORE.** Show the user an estimated cost in the UI *before* the action runs. Compute it from the service's published price — `settlemesh show <service>` for per-call services, or `credits_per_second × expected_seconds` for a cloud worker — then multiply by your markup `m`. (**HTTP-only agents:** the REST service-detail payload has no `pricing` field; use **`POST /v1/billing/quote`** — see the quote note below — as the canonical price source.) Display it as "≈ N Aev" (mark it an estimate; the real charge is metered).
-- **Actual AFTER.** Show the exact amount actually charged once the action completes. A metered cloud-worker job reports it on the job: `GET /v1/worker-jobs/{id}` → `data.metadata.settlement_cost_credits` (the Aev charged, markup included). For any service you can also show the wallet delta from `GET /v1/wallet/balance` before/after.
+- **Actual AFTER.** Show the exact amount actually charged once the action completes. For a **synchronous capability invoke** the response carries the charge in the **`X-Settle-Charged-Aev`** response header (the exact Aev billed to the payer, markup included; the metered path also adds `X-Settle-Base-Cost-Aev` + `X-Settle-Markup-Aev`). Read that header — do NOT infer the charge from the provider's raw `usage.cost` in the body (that is the upstream provider's cost, not your Aev charge, and is often a tiny number that rounds to "0.00"). A metered cloud-worker job instead reports it on the job: `GET /v1/worker-jobs/{id}` → `data.metadata.settlement_cost_credits`. (Streaming responses can't carry the header — their body is already on the wire by capture time; show the wallet delta from `GET /v1/wallet/balance` before/after, or the estimate.)
 - **Viewing entry.** Give the user a link to their full Aev spend — their SettleMesh account/wallet (where every charge across all apps is itemized) — so they can audit what your app cost them. `GET /v1/wallet/balance` (with `X-Settle-Payer`) is the live balance; link the user to the SettleMesh wallet page for history.
 
 **4. (Optional) Per-app spend allowance.** By DEFAULT a logged-in user can spend on any app up to their wallet balance — no separate grant needed. Only if the operator turned the per-app cap back on (`SETTLEMESH_DELEGATED_APP_ALLOWANCE=true`) does a charge without an allowance return **403 `app_allowance_required`**; then the user grants one (revocable blast-radius cap for your app):
@@ -342,6 +367,34 @@ A multi-service app (e.g. frontend + backend) wires the dependency by reference,
 
 On deploy `@app:my-api` resolves to that app's live URL **before the build** (so it bakes into build-time `NEXT_PUBLIC_*`/`VITE_*`) and keeps working across the sibling's redeploys. Hardcoding the sibling URL breaks the moment it changes.
 
+## Buy And Connect A Custom Domain
+
+Give an app a real domain (e.g. `yourbrand.com`) end-to-end: the agent searches + quotes, a **human pays** via a confirm link, then the platform registers it and wires DNS + TLS automatically. Every deployed app already gets a free `<name>.settlemesh.run` subdomain — this is for a domain you own.
+
+```bash
+# 1. Search availability + real prices (no money, no commitment)
+settlemesh call domain.search --input '{"query":"yourbrand","tlds":["com","io","xyz"]}' --json
+
+# 2. Quote ONE exact domain → returns a confirm_url. Pass app_id to auto-connect on purchase.
+settlemesh call domain.quote --input '{"fqdn":"yourbrand.com","app_id":"app_xxx"}' --json
+# → { "confirm_url": "https://www.settlemesh.io/domains/confirm/<token>", "price_aev": 1299, ... }
+
+# 3. A HUMAN opens confirm_url, signs in, reviews price + registrant + agreement, clicks Confirm & Pay.
+#    This is the ONLY step that moves money. The agent must STOP here — never auto-pay, never set ?confirm=true.
+
+# 4. Connect a domain you ALREADY own to an app (or re-connect):
+settlemesh call domain.attach --input '{"fqdn":"yourbrand.com","app_id":"app_xxx"}' --json
+
+# 5. Your ICANN right: get the EPP auth code to transfer the domain OUT to another registrar:
+settlemesh call domain.transfer_authcode --input '{"fqdn":"yourbrand.com"}' --json
+```
+
+Rules that matter:
+- **Agent quotes, human pays.** Domain registration is irreversible spend, so it requires an explicit human click on the confirm page (price breakdown, ICANN registrant contact, and a separate registration-agreement consent are all shown there). An agent that tries to self-confirm is rejected by design.
+- **The human types the exact domain.** Agents must not free-text-invent names; trademark / typosquat / look-alike (IDN homoglyph) names are hard-rejected at quote to keep you out of UDRP/ACPA trouble.
+- **After payment it's automatic:** the domain registers, a Cloudflare-for-SaaS custom hostname + DNS records are written for you, TLS issues automatically, and the app serves on the domain within minutes — no dashboard, no nameserver fiddling.
+- **Pricing is cost-plus and shown up front** (`registration_price_aev`); a domain is **non-refundable once registered** (a failed/never-completed registration is auto-refunded). Registrant contact you enter once is remembered for next time.
+
 ## Optional App API Or CLI Command
 
 Use App APIs and App Commands only when the app should expose a route or command for other users or agents.
@@ -418,6 +471,20 @@ settlemesh worker start --name local-model --public --model local/model --endpoi
 Other users can find approved public worker offers through service search.
 
 Pricing is **fractional per compute-second** (`--credits-per-second`); a job is billed `rate × (completed_at − started_at)`. Inspect a finished job's status, timing, and billed cost with `settlemesh worker job <job-id>` (shows `metadata.settlement_cost_credits`; `tool events` does not resolve `wjob_` ids). Omitting the rate makes the offer **free** (callers run it at 0 Aev) — the CLI prints a stderr note when that happens, so a silent free offer is never an accident. Charges can be sub-1-Aev — a short job at a small rate (e.g. 0.05/s × 4s = 0.2 Aev) may not visibly move an integer balance readout, so verify billing via the job/request cost, not a balance delta. A caller that owns the offer pays the cost normally (no owner-earnings rebate to self); owner earnings only apply when a *different* account calls your offer. The `worker start` process keeps the offer online while it polls; stop it with Ctrl-C, or from another shell run `settlemesh worker stop <worker-id>` — that takes the worker and its offers offline and signals a still-running poller to exit (so it won't re-register itself online).
+
+To lend your **logged-in local coding agent** (Claude Code / Codex) instead of a model endpoint, use `settlemesh worker lend codex --allow <caller-login-email>` — see the next section for how the caller then reaches it.
+
+## Use A Worker Someone Lent You (allowlist offers — NOT searchable)
+
+If someone **lent** you their machine's compute (e.g. `settlemesh worker lend codex --allow you@example.com`), that offer is an **allowlist offer**: it is private to its allowlist and **does NOT appear in `settlemesh search` or `worker-offers list`**. Do not waste time searching for it — you won't find it, and that is by design (not an error). You address it **directly by the LENDER's SettleMesh login email** (which is the offer's `public_id`), or by an `offer_id` (`wof_…`) they hand you:
+
+```bash
+settlemesh worker invoke <lender-login-email> --input '{"prompt":"Write a Python is_prime(n). Only code."}'
+# e.g. settlemesh worker invoke alice@gmail.com --input '{"prompt":"..."}'
+# HTTP equivalent: POST /v1/worker-offers/<lender-login-email>/invoke  with body {"input":{"prompt":"..."}}
+```
+
+The input for a lent coding agent is `{"prompt":"<your task>"}`. The call is synchronous (waits for the result; add `--no-wait` to get a job id and poll `GET /v1/worker-jobs/<id>`). You must be on the offer's allowlist (matched by your login email or account id) — otherwise you get `worker_forbidden`. A `worker_unavailable` means the lender's machine is offline (their `worker lend` process stopped); it is not an addressing error.
 
 ## Load The Toolset Into Your Own Agent Runtime
 
